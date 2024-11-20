@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.cache import cache
 from rest_framework.permissions import IsAuthenticated
 from .models import Transaction
-from .serializers import TransactionSerializer
+from .serializers import TransactionSerializer, ExchangeRateSerializer
 
 
 class TransactionCreateView(generics.CreateAPIView):
@@ -15,23 +15,22 @@ class TransactionCreateView(generics.CreateAPIView):
     serializer_class = TransactionSerializer
     permission_classes = [IsAuthenticated]
 
-
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        # Validate the incoming data with ExchangeRateSerializer
+        exchange_rate_serializer = ExchangeRateSerializer(data=request.data)
 
-        if serializer.is_valid():
-            input_amount = serializer.validated_data.get("input_amount")
-            input_currency = serializer.validated_data.get("input_currency")
-            output_currency = serializer.validated_data.get("output_currency")
+        if exchange_rate_serializer.is_valid():
+            customer_id = exchange_rate_serializer.validated_data.get("customer_id")
+            input_amount = exchange_rate_serializer.validated_data.get("input_amount")
+            input_currency = exchange_rate_serializer.validated_data.get("input_currency")
+            output_currency = exchange_rate_serializer.validated_data.get("output_currency")
 
-            # Create a unique cache key for the exchange rate between the currencies
+            # Step 2: Handle exchange rate logic (use cache or fetch from API)
             cache_key = f"exchange_rate_{input_currency}_{output_currency}"
-
-            # Check if the exchange rate is already cached
             exchange_rate = cache.get(cache_key)
 
             if not exchange_rate:
-                # If not cached, fetch it from the API
+                # If not cached, fetch it from the external API
                 api_url = f"{settings.EXCHANGE_RATE_API_URL}/{settings.EXCHANGE_RATE_API_KEY}/latest/USD"
                 response = requests.get(api_url, verify=False)
 
@@ -40,53 +39,86 @@ class TransactionCreateView(generics.CreateAPIView):
                     exchange_rate = exchange_rates.get(output_currency)
 
                     if exchange_rate:
-                        # Cache the exchange rate for 1 hour (adjust as needed)
+                        # Cache the exchange rate for 1 hour
                         cache.set(cache_key, exchange_rate, timeout=3600)
 
-                        # Calculate the output amount
+                        # Calculate the output amount and round it to 2 decimal places
                         exchange_rate_decimal = Decimal(str(exchange_rate))
-                        output_amount = input_amount * exchange_rate_decimal
-                        serializer.save(output_amount=output_amount)
+                        output_amount = round(input_amount * exchange_rate_decimal, 2)
 
-                        headers = self.get_success_headers(serializer.data)
-                        return Response({
-                            "data": serializer.data,
-                            "status": status.HTTP_201_CREATED,
-                            "message": "Transaction created successfully"
-                        }, status=status.HTTP_201_CREATED, headers=headers)
+                        # Create the transaction using the TransactionSerializer
+                        transaction_data = {
+                            "input_amount": input_amount,
+                            "input_currency": input_currency,
+                            "output_currency": output_currency,
+                            "output_amount": output_amount,
+                            "customer_id": customer_id
+                        }
+                        transaction_serializer = TransactionSerializer(data=transaction_data)
+
+                        if transaction_serializer.is_valid():
+                            transaction_serializer.save()
+                            return Response({
+                                "data": transaction_serializer.data,
+                                "status": status.HTTP_201_CREATED,
+                                "message": "Transaction created successfully"
+                            }, status=status.HTTP_201_CREATED)
+                        else:
+                            return Response({
+                                "data": {},
+                                "errors": transaction_serializer.errors,
+                                "status": status.HTTP_400_BAD_REQUEST,
+                                "message": "Transaction creation failed"
+                            }, status=status.HTTP_400_BAD_REQUEST)
                     else:
                         return Response({
                             "data": {},
-                            "error":f"Conversion rate for {output_currency} not available.",
+                            "error": f"Conversion rate for {output_currency} not available.",
                             "status": status.HTTP_400_BAD_REQUEST,
                             "message": f"Conversion rate for {output_currency} not available."
                         }, status=status.HTTP_400_BAD_REQUEST)
                 else:
                     return Response({
                         "data": {},
-                        "error":"error fetching exchange rate from eternal API",
+                        "error": "Error fetching exchange rate from external API",
                         "status": status.HTTP_502_BAD_GATEWAY,
                         "message": "Error fetching exchange rate from external API"
                     }, status=status.HTTP_502_BAD_GATEWAY)
             else:
                 # If exchange rate is cached, use it
                 exchange_rate_decimal = Decimal(str(exchange_rate))
-                output_amount = input_amount * exchange_rate_decimal
-                serializer.save(output_amount=output_amount)
+                output_amount = round(input_amount * exchange_rate_decimal, 2)
 
-                headers = self.get_success_headers(serializer.data)
-                return Response({
-                    "data": serializer.data,
-                    "error":None,
-                    "status": status.HTTP_201_CREATED,
-                    "message": "Transaction created successfully"
-                }, status=status.HTTP_201_CREATED, headers=headers)
+                # Create the transaction using the TransactionSerializer
+                transaction_data = {
+                    "input_amount": input_amount,
+                    "input_currency": input_currency,
+                    "output_currency": output_currency,
+                    "output_amount": output_amount,
+                    "customer_id": customer_id
+                }
+                transaction_serializer = TransactionSerializer(data=transaction_data)
+
+                if transaction_serializer.is_valid():
+                    transaction_serializer.save()
+                    return Response({
+                        "data": transaction_serializer.data,
+                        "status": status.HTTP_201_CREATED,
+                        "message": "Transaction created successfully"
+                    }, status=status.HTTP_201_CREATED)
+                else:
+                    return Response({
+                        "data": {},
+                        "errors": transaction_serializer.errors,
+                        "status": status.HTTP_400_BAD_REQUEST,
+                        "message": "Transaction creation failed"
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({
             "data": {},
-            "errors": serializer.errors,
+            "errors": exchange_rate_serializer.errors,
             "status": status.HTTP_400_BAD_REQUEST,
-            "message": "Validation failed"
+            "message": "Invalid data"
         }, status=status.HTTP_400_BAD_REQUEST)
 
 

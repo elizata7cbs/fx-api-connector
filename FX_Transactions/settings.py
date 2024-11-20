@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -133,19 +133,24 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 EXCHANGE_RATE_API_URL = 'https://v6.exchangerate-api.com/v6'
 EXCHANGE_RATE_API_KEY = 'd7110309076d2e8cdf393e8c'
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Access token will expire in 15 minutes
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=3),
+}
+
 
 
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://redis-19517.c282.east-us-mz.azure.redns.redis-cloud.com:19517',
+        'LOCATION': 'redis://:RBCA0Tvw9sTVaMya4jAk0VTXHqPCHnNC@redis-16990.c282.east-us-mz.azure.redns.redis-cloud.com:16990',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'PASSWORD': 'RBCA0Tvw9sTVaMya4jAk0VTXHqPCHnNC',
-            'SSL': True,  # Ensure SSL is enabled if required by your Redis provider
+            'SSL': True,  # Ensure SSL is enabled as per your Redis configuration
         }
     }
 }
+
 
 
 
