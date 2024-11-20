@@ -132,3 +132,22 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 EXCHANGE_RATE_API_URL = 'https://v6.exchangerate-api.com/v6'
 EXCHANGE_RATE_API_KEY = 'd7110309076d2e8cdf393e8c'
+
+
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://redis-19517.c282.east-us-mz.azure.redns.redis-cloud.com:19517',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'PASSWORD': 'RBCA0Tvw9sTVaMya4jAk0VTXHqPCHnNC',
+            'SSL': True,  # Ensure SSL is enabled if required by your Redis provider
+        }
+    }
+}
+
+
+
+
+
