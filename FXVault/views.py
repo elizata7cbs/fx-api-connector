@@ -15,12 +15,6 @@ class TransactionCreateView(generics.CreateAPIView):
     serializer_class = TransactionSerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        return Response({
-            "data": {},
-            "status": status.HTTP_200_OK,
-            "message": "You are authenticated!"
-        })
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -63,12 +57,14 @@ class TransactionCreateView(generics.CreateAPIView):
                     else:
                         return Response({
                             "data": {},
+                            "error":f"Conversion rate for {output_currency} not available.",
                             "status": status.HTTP_400_BAD_REQUEST,
                             "message": f"Conversion rate for {output_currency} not available."
                         }, status=status.HTTP_400_BAD_REQUEST)
                 else:
                     return Response({
                         "data": {},
+                        "error":"error fetching exchange rate from eternal API",
                         "status": status.HTTP_502_BAD_GATEWAY,
                         "message": "Error fetching exchange rate from external API"
                     }, status=status.HTTP_502_BAD_GATEWAY)
@@ -81,6 +77,7 @@ class TransactionCreateView(generics.CreateAPIView):
                 headers = self.get_success_headers(serializer.data)
                 return Response({
                     "data": serializer.data,
+                    "error":None,
                     "status": status.HTTP_201_CREATED,
                     "message": "Transaction created successfully"
                 }, status=status.HTTP_201_CREATED, headers=headers)
@@ -122,6 +119,7 @@ class CurrencyListView(generics.ListAPIView):
         if not queryset:
             return Response({
                 "data": {},
+                "error":"Error fetching data from external API",
                 "status": status.HTTP_502_BAD_GATEWAY,
                 "message": "Error fetching data from external API"
             }, status=status.HTTP_502_BAD_GATEWAY)
