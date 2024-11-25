@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+
+from decouple import config
 from dotenv import load_dotenv
 
 # environment variables from .env file
@@ -135,8 +137,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EXCHANGE_RATE_API_URL = 'https://v6.exchangerate-api.com/v6'
-EXCHANGE_RATE_API_KEY = 'd7110309076d2e8cdf393e8c'
+EXCHANGE_RATE_API_URL = os.getenv('EXCHANGE_RATE_API_URL')
+EXCHANGE_RATE_API_KEY = os.getenv('EXCHANGE_RATE_API_KEY')
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('ACCESS_TOKEN_LIFETIME', 50))),
@@ -148,14 +150,16 @@ SIMPLE_JWT = {
 
 CACHES = {
     'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://:RBCA0Tvw9sTVaMya4jAk0VTXHqPCHnNC@redis-16990.c282.east-us-mz.azure.redns.redis-cloud.com:16990',
+        'BACKEND': config('REDIS_BACKEND', default='django_redis.cache.RedisCache'),
+        'LOCATION': config('REDIS_LOCATION', default='redis://127.0.0.1:6379/1'),
         'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'SSL': True,  # Ensure SSL is enabled as per your Redis configuration
+            'CLIENT_CLASS': config('REDIS_CLIENT_CLASS', default='django_redis.client.DefaultClient'),
+            'SSL': config('REDIS_SSL', default='False', cast=bool),
         }
     }
 }
+
+
 
 
 
