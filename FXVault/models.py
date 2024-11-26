@@ -1,5 +1,6 @@
 import uuid
 
+from django.contrib.auth.models import User
 from django.db import models
 
 class Transaction(models.Model):
@@ -10,4 +11,12 @@ class Transaction(models.Model):
     output_amount = models.DecimalField(max_digits=100, decimal_places=2,null = True, blank = True)
     output_currency = models.CharField(max_length=3)
     transaction_date = models.DateTimeField(auto_now_add=True)
+
+
+class UserCurrencyPreference(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    allowed_currencies = models.JSONField(default=list)  # Stores a list of allowed currencies
+
+    def __str__(self):
+        return f"Preferences for {self.user.username}"
 

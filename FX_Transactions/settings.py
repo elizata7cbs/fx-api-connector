@@ -9,8 +9,13 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+import os
+from datetime import timedelta
 from pathlib import Path
+from dotenv import load_dotenv
+
+# environment variables from .env file
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -132,3 +137,28 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 EXCHANGE_RATE_API_URL = 'https://v6.exchangerate-api.com/v6'
 EXCHANGE_RATE_API_KEY = 'd7110309076d2e8cdf393e8c'
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('ACCESS_TOKEN_LIFETIME', 50))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('REFRESH_TOKEN_LIFETIME', 180)))
+}
+
+
+
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://:RBCA0Tvw9sTVaMya4jAk0VTXHqPCHnNC@redis-16990.c282.east-us-mz.azure.redns.redis-cloud.com:16990',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SSL': True,  # Ensure SSL is enabled as per your Redis configuration
+        }
+    }
+}
+
+
+
+
+
+
