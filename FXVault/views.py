@@ -1,4 +1,6 @@
+import logging
 import requests
+import time  # Import the time module for measuring time
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.response import Response
@@ -9,6 +11,14 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Transaction, UserCurrencyPreference
 from .serializers import TransactionSerializer, ExchangeRateSerializer, UserCurrencyPreferenceSerializer
 
+# Initialize logger for FXVault app
+logger = logging.getLogger('FXVault')
+
+# Log a message
+logger.debug("This is a debug message")
+logger.info("This is an info message")
+logger.error("This is an error message")
+
 
 class TransactionCreateView(generics.CreateAPIView):
     queryset = Transaction.objects.all()
@@ -16,79 +26,82 @@ class TransactionCreateView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
-        # Get the logged-in user
+        logger.debug("TransactionCreateView.create called with data: %s", request.data)
         user = request.user
 
-        # Get the user's allowed currencies
-        user_preferences = UserCurrencyPreference.objects.get(user=user)
-        allowed_currencies = user_preferences.allowed_currencies
+        try:
+            user_preferences = UserCurrencyPreference.objects.get(user=user)
+            allowed_currencies = user_preferences.allowed_currencies
+            logger.info("User %s has allowed currencies: %s", user.username, allowed_currencies)
 
-        # Validate the incoming data with ExchangeRateSerializer
-        exchange_rate_serializer = ExchangeRateSerializer(data=request.data)
-        if exchange_rate_serializer.is_valid():
-            input_currency = exchange_rate_serializer.validated_data.get("input_currency")
-            output_currency = exchange_rate_serializer.validated_data.get("output_currency")
+            exchange_rate_serializer = ExchangeRateSerializer(data=request.data)
+            if exchange_rate_serializer.is_valid():
+                input_currency = exchange_rate_serializer.validated_data.get("input_currency")
+                output_currency = exchange_rate_serializer.validated_data.get("output_currency")
 
-            # Check if the user is allowed to use these currencies
-            if input_currency not in allowed_currencies or output_currency not in allowed_currencies:
-                return Response({
-                    "message": "You are not allowed to convert between these currencies.",
-                    "status": status.HTTP_403_FORBIDDEN
-                }, status=status.HTTP_403_FORBIDDEN)
+                if input_currency not in allowed_currencies or output_currency not in allowed_currencies:
+                    logger.warning(
+                        "User %s tried converting unauthorized currencies: %s to %s",
+                        user.username, input_currency, output_currency
+                    )
+                    return Response({
+                        "message": "You are not allowed to convert between these currencies.",
+                        "status": status.HTTP_403_FORBIDDEN
+                    }, status=status.HTTP_403_FORBIDDEN)
 
-            # Handle exchange rate logic (using cache or fetch from API)
-            cache_key = f"exchange_rate_{input_currency}_{output_currency}"
-            exchange_rate = cache.get(cache_key)
+                cache_key = f"exchange_rate_{input_currency}_{output_currency}"
+                start_time = time.time()  # Start the timer
 
-            if not exchange_rate:
-                # Fetch exchange rate from API
-                api_url = f"{settings.EXCHANGE_RATE_API_URL}/{settings.EXCHANGE_RATE_API_KEY}/latest/USD"
-                response = requests.get(api_url, verify=False)
+                exchange_rate = cache.get(cache_key)
 
-                if response.status_code == 200:
-                    exchange_rates = response.json().get("conversion_rates", {})
-                    exchange_rate = exchange_rates.get(output_currency)
-
-                    if exchange_rate:
-                        # Convert exchange_rate to Decimal for accurate calculations
-                        exchange_rate = Decimal(str(exchange_rate))
-
-                        # Cache the exchange rate
-                        cache.set(cache_key, exchange_rate, timeout=3600)
-
-                        # Convert input_amount to Decimal for multiplication
-                        input_amount = Decimal(str(exchange_rate_serializer.validated_data['input_amount']))
-
-                        # Calculate the output amount
-                        output_amount = round(exchange_rate * input_amount, 2)
-
-                        # Save the transaction
-                        transaction_data = {
-                            "input_amount": input_amount,
-                            "input_currency": input_currency,
-                            "output_currency": output_currency,
-                            "output_amount": output_amount,
-                            "customer_id": exchange_rate_serializer.validated_data['customer_id']
-                        }
-                        transaction_serializer = TransactionSerializer(data=transaction_data)
-                        if transaction_serializer.is_valid():
-                            transaction_serializer.save()
-                            return Response({
-                                "data": transaction_serializer.data,
-                                "status": status.HTTP_201_CREATED,
-                                "message": "Transaction created successfully"
-                            }, status=status.HTTP_201_CREATED)
+                if exchange_rate:
+                    elapsed_time = time.time() - start_time  # Calculate time taken for cache retrieval
+                    logger.info("Cache hit for exchange rate %s to %s. Time taken: %.4f seconds", input_currency,
+                                output_currency, elapsed_time)
+                    exchange_rate = Decimal(str(exchange_rate))
                 else:
+                    api_url = f"{settings.EXCHANGE_RATE_API_URL}/{settings.EXCHANGE_RATE_API_KEY}/latest/USD"
+                    response = requests.get(api_url, verify=False)
+
+                    if response.status_code == 200:
+                        exchange_rates = response.json().get("conversion_rates", {})
+                        exchange_rate = exchange_rates.get(output_currency)
+
+                        if exchange_rate:
+                            exchange_rate = Decimal(str(exchange_rate))
+                            cache.set(cache_key, exchange_rate, timeout=3600)  # Cache the rate for 1 hour
+                            elapsed_time = time.time() - start_time  # Time taken for external API request
+                            logger.info(
+                                "Fetched exchange rate from external API for %s to %s. Time taken: %.4f seconds",
+                                input_currency, output_currency, elapsed_time)
+
+                            input_amount = Decimal(str(exchange_rate_serializer.validated_data['input_amount']))
+                            output_amount = round(exchange_rate * input_amount, 2)
+
+                            transaction_data = {
+                                "input_amount": input_amount,
+                                "input_currency": input_currency,
+                                "output_currency": output_currency,
+                                "output_amount": output_amount,
+                                "customer_id": exchange_rate_serializer.validated_data['customer_id']
+                            }
+                            transaction_serializer = TransactionSerializer(data=transaction_data)
+                            if transaction_serializer.is_valid():
+                                transaction_serializer.save()
+                                logger.info("Transaction created successfully for user %s", user.username)
+                                return Response({
+                                    "data": transaction_serializer.data,
+                                    "status": status.HTTP_201_CREATED,
+                                    "message": "Transaction created successfully"
+                                }, status=status.HTTP_201_CREATED)
+                    logger.error("Failed to fetch exchange rate from external API")
                     return Response({
                         "message": "Error fetching exchange rate.",
                         "status": status.HTTP_502_BAD_GATEWAY
                     }, status=status.HTTP_502_BAD_GATEWAY)
-            else:
-                # Use cached exchange rate
-                exchange_rate = Decimal(str(exchange_rate))  # Convert exchange_rate to Decimal
-                input_amount = Decimal(str(exchange_rate_serializer.validated_data['input_amount']))  # Convert input_amount to Decimal
 
-                # Calculate the output amount
+                # Process transaction using cached rate
+                input_amount = Decimal(str(exchange_rate_serializer.validated_data['input_amount']))
                 output_amount = round(exchange_rate * input_amount, 2)
 
                 transaction_data = {
@@ -101,17 +114,32 @@ class TransactionCreateView(generics.CreateAPIView):
                 transaction_serializer = TransactionSerializer(data=transaction_data)
                 if transaction_serializer.is_valid():
                     transaction_serializer.save()
+                    logger.info("Transaction created successfully for user %s using cached rate", user.username)
                     return Response({
                         "data": transaction_serializer.data,
                         "status": status.HTTP_201_CREATED,
                         "message": "Transaction created successfully"
                     }, status=status.HTTP_201_CREATED)
 
-        return Response({
-            "errors": exchange_rate_serializer.errors,
-            "status": status.HTTP_400_BAD_REQUEST,
-            "message": "Invalid data"
-        }, status=status.HTTP_400_BAD_REQUEST)
+            logger.warning("Invalid data provided for transaction creation: %s", exchange_rate_serializer.errors)
+            return Response({
+                "errors": exchange_rate_serializer.errors,
+                "status": status.HTTP_400_BAD_REQUEST,
+                "message": "Invalid data"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except UserCurrencyPreference.DoesNotExist:
+            logger.error("User %s does not have currency preferences configured", user.username)
+            return Response({
+                "message": "Currency preferences not found for this user.",
+                "status": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.exception("An unexpected error occurred during transaction creation: %s", str(e))
+            return Response({
+                "message": "An error occurred while processing your request.",
+                "status": status.HTTP_500_INTERNAL_SERVER_ERROR
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserCurrencyPreferenceView(generics.GenericAPIView):
@@ -120,15 +148,17 @@ class UserCurrencyPreferenceView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # Handle creating a new preference or saving the first one
+        logger.debug("UserCurrencyPreferenceView.post called with data: %s", request.data)
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             preference = self.perform_create(serializer)
+            logger.info("Currency preference created for user %s", request.user.username)
             return Response({
                 "data": UserCurrencyPreferenceSerializer(preference).data,
                 "status": status.HTTP_201_CREATED,
                 "message": "Currency preference saved successfully."
             }, status=status.HTTP_201_CREATED)
+        logger.warning("Invalid data for currency preference creation: %s", serializer.errors)
         return Response({
             "data": None,
             "status": status.HTTP_400_BAD_REQUEST,
@@ -136,27 +166,27 @@ class UserCurrencyPreferenceView(generics.GenericAPIView):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     def patch(self, request, *args, **kwargs):
-        # Get the user and check if they already have a preference
         user = self.request.user
+        logger.debug("UserCurrencyPreferenceView.patch called for user %s", user.username)
         try:
             preference = UserCurrencyPreference.objects.get(user=user)
         except UserCurrencyPreference.DoesNotExist:
+            logger.error("Currency preference not found for user %s", user.username)
             return Response({
                 "message": "Preference not found. Please create one first.",
                 "status": status.HTTP_404_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
 
-        # Use the serializer to validate and update the data (partial update)
-        serializer = self.get_serializer(preference, data=request.data,
-                                         partial=True)  # 'partial=True' allows partial updates
+        serializer = self.get_serializer(preference, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()  # Save the updated data
+            serializer.save()
+            logger.info("Currency preference updated for user %s", user.username)
             return Response({
                 "data": serializer.data,
                 "status": status.HTTP_200_OK,
                 "message": "Currency preference updated successfully."
             }, status=status.HTTP_200_OK)
-
+        logger.warning("Invalid data for currency preference update: %s", serializer.errors)
         return Response({
             "errors": serializer.errors,
             "status": status.HTTP_400_BAD_REQUEST,
@@ -164,34 +194,30 @@ class UserCurrencyPreferenceView(generics.GenericAPIView):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     def perform_create(self, serializer):
-        # Check if the user already has a currency preference
         user = self.request.user
         preference, created = UserCurrencyPreference.objects.get_or_create(user=user)
-
-        # If the preference already exists, we update it
         if not created:
             serializer.update(preference, serializer.validated_data)
         else:
-            # If not, we save the new preference
             serializer.save(user=user)
-
         return preference
 
 
 class CurrencyListView(generics.ListAPIView):
     def get_queryset(self):
+        logger.debug("CurrencyListView.get_queryset called")
         api_url = f"{settings.EXCHANGE_RATE_API_URL}/{settings.EXCHANGE_RATE_API_KEY}/latest/USD"
         response = requests.get(api_url, verify=False)
 
         if response.status_code == 200:
-            # Fetching the conversion rates and organizing them as a dictionary of currencies and their rates
             conversion_rates = response.json().get("conversion_rates", {})
             currencies_with_rates = [
                 {"currency": currency, "rate": rate} for currency, rate in conversion_rates.items()
             ]
+            logger.info("Fetched conversion rates successfully.")
             return currencies_with_rates
 
-        # If API call fails, return an empty list
+        logger.error("Failed to fetch conversion rates from external API")
         return []
 
     def list(self, request, *args, **kwargs):
@@ -209,6 +235,7 @@ class TransactionListView(generics.ListAPIView):
     serializer_class = TransactionSerializer
 
     def list(self, request, *args, **kwargs):
+        logger.debug("TransactionListView.list called")
         queryset = self.get_queryset()
         return Response({
             "data": TransactionSerializer(queryset, many=True).data,
@@ -223,6 +250,7 @@ class TransactionDetailView(generics.RetrieveAPIView):
     lookup_field = 'identifier'
 
     def retrieve(self, request, *args, **kwargs):
+        logger.debug("TransactionDetailView.retrieve called with identifier: %s", kwargs.get('identifier'))
         transaction = self.get_object()
         return Response({
             "data": TransactionSerializer(transaction).data,
