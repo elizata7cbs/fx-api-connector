@@ -164,7 +164,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': False,  # Don't disable existing loggers
+    'disable_existing_loggers': False,  
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {message}',
@@ -182,16 +182,16 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
-        # File handler to store logs in the app.log file (basic file logging)
+        # File handler to store logs in the app.log file 
         'file': {
-            'level': 'DEBUG',  # You can adjust this level (DEBUG, INFO, ERROR)
+            'level': 'DEBUG',  
             'class': 'logging.FileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'app.log'),  # Log file path
             'formatter': 'verbose',
         },
-        # Rotating file handler for managing large log files (optional)
+        # Rotating file handler for managing large log files 
         'rotating_file': {
-            'level': 'DEBUG',  # Adjust as needed
+            'level': 'DEBUG',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'app.log'),
             'maxBytes': 10485760,  # Max log file size (10MB)
@@ -200,17 +200,17 @@ LOGGING = {
         },
     },
     'loggers': {
-        # Logger for Django, this handles all Django-related logs
+        
         'django': {
-            'handlers': ['console', 'file'],  # You can add 'file' here to also log to file
-            'level': 'INFO',  # This controls the minimum level of logs for Django
+            'handlers': ['console', 'file'],
+            'level': 'INFO',  
             'propagate': True,
         },
-        # Custom logger for your app (e.g., 'FXVault')
-        'FXVault': {  # Replace 'FXVault' with the name of your app or any custom name
-            'handlers': ['console', 'rotating_file'],  # Replace 'file' with 'rotating_file' for rotating logs
-            'level': 'DEBUG',  # Adjust as needed
-            'propagate': False,  # Set to False to avoid duplicate logs from propagation
+        
+        'FXVault': {  
+            'handlers': ['console', 'rotating_file'],  
+            'level': 'DEBUG',  
+            'propagate': False,  
         },
     },
 }
